@@ -24,21 +24,19 @@ def get_city_id(city: str, key: str) -> str | None:
 def _extract_contacts(item: dict) -> dict:
     contacts = {"phone": [], "whatsapp": [], "telegram": [], "viber": [], "vk": [], "instagram": [], "email": []}
 
-    for group in item.get("contact_groups", []):
-        for c in group.get("contacts", []):
-            ctype = c.get("type", "")
-            value = c.get("value", "") or c.get("url", "")
-            if ctype in contacts:
-                contacts[ctype].append(value)
+    for c in item.get("org", {}).get("contacts", []):
+        ctype = c.get("type", "")
+        value = c.get("value", "") or c.get("url", "")
+        if ctype in contacts:
+            contacts[ctype].append(value)
 
     return contacts
 
 
 def _has_website(item: dict) -> bool:
-    for group in item.get("contact_groups", []):
-        for c in group.get("contacts", []):
-            if c.get("type") == "website":
-                return True
+    for c in item.get("org", {}).get("contacts", []):
+        if c.get("type") == "website":
+            return True
     return False
 
 
@@ -57,7 +55,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "item.contact_groups",
+                "fields": "org.contacts",
             }
         else:
             params = {
@@ -65,7 +63,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "item.contact_groups",
+                "fields": "org.contacts",
             }
 
         resp = requests.get(url, params=params, timeout=15)
