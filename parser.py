@@ -8,10 +8,10 @@ GIS_BASE = "https://catalog.api.2gis.com"
 def get_city_id(city: str, key: str) -> str | None:
     url = f"{GIS_BASE}/2.0/region/list"
     resp = requests.get(url, params={"q": city, "key": key}, timeout=10)
+    print("REGIONS ответ:", resp.status_code)
+    print("REGIONS json:", resp.json())
     resp.raise_for_status()
-    data = resp.json()
-    print(f"[DEBUG] regions API response: {json.dumps(data, ensure_ascii=False)}")
-    items = data.get("result", {}).get("items", [])
+    items = resp.json().get("result", {}).get("items", [])
     if not items:
         return None
     return str(items[0]["id"])
@@ -56,21 +56,18 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
             }
 
         resp = requests.get(url, params=params, timeout=15)
+        print("CATALOG статус:", resp.status_code)
+        print("CATALOG json:", resp.json())
         resp.raise_for_status()
         data = resp.json()
 
-        if page == 1:
-            print("2GIS ответ:", data)
-
         items = data.get("result", {}).get("items", [])
-        print(f"[DEBUG] page {page}: got {len(items)} items")
         if not items:
             break
 
-        print(json.dumps(items[0], ensure_ascii=False, indent=2))
-
         for item in items:
             checked += 1
+            print("ITEM:", item.get("name"), "contacts:", item.get("contact_groups"))
             org = item.get("org", {})
             contacts = _extract_contacts(org)
             if not any(contacts.values()):
