@@ -1,6 +1,13 @@
 import os
+import sys
 import threading
 import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    force=True,
+)
 
 import requests
 from dotenv import load_dotenv
@@ -20,9 +27,6 @@ PORT = int(os.environ.get("PORT", 5000))
 WEBHOOK_URL = "https://twogisparser.onrender.com/webhook"
 
 API = f"https://api.telegram.org/bot{TOKEN}"
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
 
 # ── Telegram helpers ───────────────────────────────────────────────────────────
 
@@ -106,7 +110,7 @@ def handle_parse(chat_id: int, args: list[str]):
         send(chat_id, f"❌ {e}")
         return
     except Exception as e:
-        logger.exception("parse error")
+        logging.exception("parse error")
         send(chat_id, f"❌ Ошибка парсинга: {e}")
         return
 
@@ -121,7 +125,7 @@ def handle_parse(chat_id: int, args: list[str]):
     try:
         leads_with_messages = generate_messages_for_leads(leads, OPENROUTER_KEY, MY_SITE, MY_TG)
     except Exception as e:
-        logger.exception("generation error")
+        logging.exception("generation error")
         send(chat_id, f"❌ Ошибка генерации: {e}")
         return
 
@@ -144,7 +148,7 @@ def healthcheck():
 @app.post("/webhook")
 def webhook():
     update = request.get_json(silent=True)
-    print("ПОЛУЧЕН UPDATE:", update)
+    logging.info(f"ПОЛУЧЕН UPDATE: {update}")
 
     if not update:
         return "ok"
@@ -152,7 +156,7 @@ def webhook():
     message = update.get("message", {})
     text = message.get("text", "")
     chat_id = message.get("chat", {}).get("id")
-    print("TEXT:", text)
+    logging.info(f"TEXT: {text}")
 
     if not chat_id or not text:
         return "ok"
@@ -163,7 +167,7 @@ def webhook():
     if command == "/start":
         handle_start(chat_id)
     elif command == "/parse":
-        print("ЗАПУСКАЮ ПАРСЕР")
+        logging.info("ЗАПУСКАЮ ПАРСЕР")
         threading.Thread(target=handle_parse, args=(chat_id, parts[1:]), daemon=True).start()
 
     return "ok"
@@ -177,6 +181,6 @@ if __name__ == "__main__":
         json={"url": WEBHOOK_URL},
         timeout=10,
     )
-    logger.info("setWebhook: %s", resp.json())
+    logging.info(f"setWebhook: {resp.json()}")
 
     app.run(host="0.0.0.0", port=PORT)
