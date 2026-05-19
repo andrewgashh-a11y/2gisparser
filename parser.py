@@ -1,3 +1,4 @@
+import json
 import time
 import requests
 
@@ -16,18 +17,13 @@ def get_city_id(city: str, key: str) -> str | None:
 
 def _extract_contacts(org: dict) -> dict:
     contacts = {"phone": [], "whatsapp": [], "telegram": [], "viber": [], "vk": [], "instagram": [], "email": []}
-    has_website = False
 
     for c in org.get("contacts", []):
         ctype = c.get("type", "")
         value = c.get("value", "") or c.get("url", "")
-        if ctype == "website":
-            has_website = True
-        elif ctype in contacts:
+        if ctype in contacts:
             contacts[ctype].append(value)
 
-    if has_website:
-        return None
     return contacts
 
 
@@ -57,11 +53,13 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
         if not items:
             break
 
+        print(json.dumps(items[0], ensure_ascii=False, indent=2))
+
         for item in items:
             checked += 1
             org = item.get("org", {})
             contacts = _extract_contacts(org)
-            if contacts is None:
+            if not any(contacts.values()):
                 continue
 
             leads.append({
