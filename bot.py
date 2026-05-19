@@ -1,6 +1,7 @@
 import os
 import threading
 import logging
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -50,6 +51,10 @@ def get_updates(offset: int) -> list:
             params={"offset": offset, "timeout": 30},
             timeout=35,
         )
+        if resp.status_code == 409:
+            logger.warning("409 Conflict from getUpdates, waiting 5s")
+            time.sleep(5)
+            return []
         resp.raise_for_status()
         return resp.json().get("result", [])
     except Exception as e:

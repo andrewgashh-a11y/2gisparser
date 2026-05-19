@@ -9,7 +9,9 @@ def get_city_id(city: str, key: str) -> str | None:
     url = f"{GIS_BASE}/2.0/region/list"
     resp = requests.get(url, params={"q": city, "key": key}, timeout=10)
     resp.raise_for_status()
-    items = resp.json().get("result", {}).get("items", [])
+    data = resp.json()
+    print(f"[DEBUG] regions API response: {json.dumps(data, ensure_ascii=False)}")
+    items = data.get("result", {}).get("items", [])
     if not items:
         return None
     return str(items[0]["id"])
@@ -29,27 +31,36 @@ def _extract_contacts(org: dict) -> dict:
 
 def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dict]:
     city_id = get_city_id(city, key)
-    if not city_id:
-        raise ValueError(f"Город «{city}» не найден в 2GIS")
 
     leads = []
     checked = 0
 
     for page in range(1, pages + 1):
         url = f"{GIS_BASE}/3.0/items"
-        params = {
-            "q": category,
-            "city_id": city_id,
-            "key": key,
-            "page_size": 50,
-            "page": page,
-            "fields": "org.website,org.contacts",
-        }
+        if city_id:
+            params = {
+                "q": category,
+                "city_id": city_id,
+                "key": key,
+                "page_size": 50,
+                "page": page,
+                "fields": "org.website,org.contacts",
+            }
+        else:
+            params = {
+                "q": f"{category} {city}",
+                "key": key,
+                "page_size": 50,
+                "page": page,
+                "fields": "org.website,org.contacts",
+            }
+
         resp = requests.get(url, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
 
         items = data.get("result", {}).get("items", [])
+        print(f"[DEBUG] page {page}: got {len(items)} items")
         if not items:
             break
 
