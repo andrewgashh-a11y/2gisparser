@@ -34,6 +34,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
             "key": key,
             "page_size": 10,
             "page": page,
+            "fields": "org.contacts",
         }
 
         resp = requests.get(url, params=params, timeout=15)
@@ -51,6 +52,8 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
 
         for item in items:
             checked += 1
+            if _has_website(item):
+                continue
             contacts = _extract_contacts(item)
             print("ITEM:", item.get("name"), "| contacts:", contacts, flush=True)
             if not any(contacts.values()):
