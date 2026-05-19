@@ -1,11 +1,10 @@
 import os
 import threading
 import logging
-import time
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 from parser import parse_businesses
 from generator import generate_messages_for_leads
@@ -18,21 +17,12 @@ OPENROUTER_KEY = os.environ["OPENROUTER_KEY"]
 MY_SITE = os.environ.get("MY_SITE", "landify.art")
 MY_TG = os.environ.get("MY_TG", "@landifyArt")
 PORT = int(os.environ.get("PORT", 5000))
+WEBHOOK_URL = "https://twogisparser.onrender.com/webhook"
 
 API = f"https://api.telegram.org/bot{TOKEN}"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-# ── Flask healthcheck ──────────────────────────────────────────────────────────
-
-flask_app = Flask(__name__)
-
-
-@flask_app.get("/")
-def healthcheck():
-    return jsonify({"status": "ok"})
-
 
 # ── Telegram helpers ───────────────────────────────────────────────────────────
 
@@ -42,24 +32,6 @@ def send(chat_id: int, text: str):
         json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
         timeout=10,
     )
-
-
-def get_updates(offset: int) -> list:
-    try:
-        resp = requests.get(
-            f"{API}/getUpdates",
-            params={"offset": offset, "timeout": 30},
-            timeout=35,
-        )
-        if resp.status_code == 409:
-            logger.warning("409 Conflict from getUpdates, waiting 5s")
-            time.sleep(5)
-            return []
-        resp.raise_for_status()
-        return resp.json().get("result", [])
-    except Exception as e:
-        logger.warning("getUpdates error: %s", e)
-        return []
 
 
 # ── Contact formatting ─────────────────────────────────────────────────────────
@@ -159,42 +131,48 @@ def handle_parse(chat_id: int, args: list[str]):
     send(chat_id, f"✅ Найдено {len(leads)} лидов из {checked} проверенных.")
 
 
-# ── Long polling loop ──────────────────────────────────────────────────────────
+# ── Flask routes ───────────────────────────────────────────────────────────────
 
-def polling():
-    offset = 0
-    logger.info("Bot polling started")
-    while True:
-        updates = get_updates(offset)
-        for update in updates:
-            offset = update["update_id"] + 1
-            message = update.get("message", {})
-            text = message.get("text", "")
-            chat_id = message.get("chat", {}).get("id")
-            if not chat_id or not text:
-                continue
-            parts = text.split()
-            command = parts[0].split("@")[0]
-            if command == "/start":
-                handle_start(chat_id)
-            elif command == "/parse":
-                handle_parse(chat_id, parts[1:])
+app = Flask(__name__)
+
+
+@app.get("/")
+def healthcheck():
+    return jsonify({"status": "ok"})
+
+
+@app.post("/webhook")
+def webhook():
+    update = request.get_json(silent=True)
+    if not update:
+        return "ok"
+
+    message = update.get("message", {})
+    text = message.get("text", "")
+    chat_id = message.get("chat", {}).get("id")
+
+    if not chat_id or not text:
+        return "ok"
+
+    parts = text.split()
+    command = parts[0].split("@")[0]
+
+    if command == "/start":
+        handle_start(chat_id)
+    elif command == "/parse":
+        threading.Thread(target=handle_parse, args=(chat_id, parts[1:]), daemon=True).start()
+
+    return "ok"
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    requests.post(
-        f"{API}/deleteWebhook",
-        json={"drop_pending_updates": True},
+    resp = requests.post(
+        f"{API}/setWebhook",
+        json={"url": WEBHOOK_URL},
         timeout=10,
     )
-    logger.info("Webhook deleted")
+    logger.info("setWebhook: %s", resp.json())
 
-    flask_thread = threading.Thread(
-        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
-        daemon=True,
-    )
-    flask_thread.start()
-    logger.info("Flask healthcheck started on port %s", PORT)
-    polling()
+    app.run(host="0.0.0.0", port=PORT)
