@@ -1,17 +1,7 @@
 services:
   - type: web
-    name: 2gis-parser-bot
+    name: 2gis-bot
     runtime: python
+    pythonVersion: "3.11"
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
-    envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
-      - key: GIS_KEY
-        sync: false
-      - key: OPENROUTER_KEY
-        sync: false
-      - key: MY_SITE
-        value: landify.art
-      - key: MY_TG
-        value: "@landifyArt"
