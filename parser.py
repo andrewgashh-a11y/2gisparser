@@ -55,7 +55,6 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "org.contacts",
             }
         else:
             params = {
@@ -63,7 +62,6 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "org.contacts",
             }
 
         resp = requests.get(url, params=params, timeout=15)
@@ -76,6 +74,8 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
         print(f"Найдено items на странице {page}:", len(items), flush=True)
         if not items:
             break
+
+        print("ПЕРВЫЙ ITEM ЦЕЛИКОМ:", items[0], flush=True)
 
         for item in items:
             checked += 1
