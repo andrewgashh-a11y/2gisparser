@@ -51,6 +51,17 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
             break
 
         print("ПЕРВЫЙ ITEM ЦЕЛИКОМ:", items[0], flush=True)
+        print("ПЕРВЫЙ ITEM KEYS:", list(items[0].keys()), flush=True)
+
+        # fetch detail by ID to see all available fields for this key
+        if page == 1:
+            first_id = items[0].get("id", "")
+            det = requests.get(
+                f"{GIS_BASE}/3.0/items/{first_id}",
+                params={"key": key, "fields": "item.contact_groups,org.contacts"},
+                timeout=10,
+            )
+            print("DETAIL по ID:", det.json(), flush=True)
 
         for item in items:
             checked += 1
