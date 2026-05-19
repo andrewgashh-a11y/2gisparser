@@ -59,6 +59,9 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
         resp.raise_for_status()
         data = resp.json()
 
+        if page == 1:
+            print("2GIS ответ:", data)
+
         items = data.get("result", {}).get("items", [])
         print(f"[DEBUG] page {page}: got {len(items)} items")
         if not items:

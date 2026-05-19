@@ -184,6 +184,13 @@ def polling():
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    requests.post(
+        f"{API}/deleteWebhook",
+        json={"drop_pending_updates": True},
+        timeout=10,
+    )
+    logger.info("Webhook deleted")
+
     flask_thread = threading.Thread(
         target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
         daemon=True,
