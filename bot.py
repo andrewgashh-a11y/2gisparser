@@ -144,12 +144,15 @@ def healthcheck():
 @app.post("/webhook")
 def webhook():
     update = request.get_json(silent=True)
+    print("ПОЛУЧЕН UPDATE:", update)
+
     if not update:
         return "ok"
 
     message = update.get("message", {})
     text = message.get("text", "")
     chat_id = message.get("chat", {}).get("id")
+    print("TEXT:", text)
 
     if not chat_id or not text:
         return "ok"
@@ -160,6 +163,7 @@ def webhook():
     if command == "/start":
         handle_start(chat_id)
     elif command == "/parse":
+        print("ЗАПУСКАЮ ПАРСЕР")
         threading.Thread(target=handle_parse, args=(chat_id, parts[1:]), daemon=True).start()
 
     return "ok"
