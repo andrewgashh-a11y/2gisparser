@@ -12,9 +12,13 @@ def get_city_id(city: str, key: str) -> str | None:
     print("REGIONS json:", resp.json())
     resp.raise_for_status()
     items = resp.json().get("result", {}).get("items", [])
-    if not items:
-        return None
-    return str(items[0]["id"])
+    city_id = None
+    for item in items:
+        if city.lower() in item.get("name", "").lower():
+            city_id = item["id"]
+            break
+    print("CITY_ID:", city_id)
+    return str(city_id) if city_id else None
 
 
 def _extract_contacts(org: dict) -> dict:
@@ -42,7 +46,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "q": category,
                 "city_id": city_id,
                 "key": key,
-                "page_size": 50,
+                "page_size": 10,
                 "page": page,
                 "fields": "org.website,org.contacts",
             }
@@ -50,7 +54,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
             params = {
                 "q": f"{category} {city}",
                 "key": key,
-                "page_size": 50,
+                "page_size": 10,
                 "page": page,
                 "fields": "org.website,org.contacts",
             }
