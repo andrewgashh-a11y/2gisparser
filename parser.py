@@ -25,23 +25,30 @@ def _has_website(item: dict) -> bool:
     return False
 
 
+def _fetch_detail(item_id: str, key: str) -> dict:
+    resp = requests.get(
+        f"{GIS_BASE}/3.0/items/{item_id}",
+        params={"key": key, "fields": "item.contact_groups"},
+        timeout=10,
+    )
+    items = resp.json().get("result", {}).get("items", [])
+    return items[0] if items else {}
+
+
 def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dict]:
     leads = []
     checked = 0
 
     for page in range(1, pages + 1):
-        url = f"{GIS_BASE}/3.0/items"
         params = {
             "q": f"{category} {city}",
             "key": key,
             "page_size": 10,
             "page": page,
-            "fields": "item.contact_groups",
         }
 
-        resp = requests.get(url, params=params, timeout=15)
+        resp = requests.get(f"{GIS_BASE}/3.0/items", params=params, timeout=15)
         print("CATALOG статус:", resp.status_code, flush=True)
-        print("CATALOG json:", resp.json(), flush=True)
         resp.raise_for_status()
         data = resp.json()
 
@@ -50,25 +57,14 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
         if not items:
             break
 
-        print("ПЕРВЫЙ ITEM ЦЕЛИКОМ:", items[0], flush=True)
-        print("ПЕРВЫЙ ITEM KEYS:", list(items[0].keys()), flush=True)
-
-        # fetch detail by ID to see all available fields for this key
-        if page == 1:
-            first_id = items[0].get("id", "")
-            det = requests.get(
-                f"{GIS_BASE}/3.0/items/{first_id}",
-                params={"key": key, "fields": "item.contact_groups,org.contacts"},
-                timeout=10,
-            )
-            print("DETAIL по ID:", det.json(), flush=True)
-
         for item in items:
             checked += 1
-            if _has_website(item):
+            detail = _fetch_detail(item["id"], key)
+            print("DETAIL:", item.get("name"), "| contact_groups:", detail.get("contact_groups"), flush=True)
+
+            if _has_website(detail):
                 continue
-            contacts = _extract_contacts(item)
-            print("ITEM:", item.get("name"), "| contacts:", contacts, flush=True)
+            contacts = _extract_contacts(detail)
             if not any(contacts.values()):
                 continue
 
@@ -77,6 +73,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "address": item.get("address_name", ""),
                 "contacts": contacts,
             })
+            time.sleep(0.3)
 
         if page < pages:
             time.sleep(0.4)
