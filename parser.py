@@ -1,5 +1,5 @@
-import json
 import time
+import sys
 import requests
 
 GIS_BASE = "https://catalog.api.2gis.com"
@@ -8,8 +8,8 @@ GIS_BASE = "https://catalog.api.2gis.com"
 def get_city_id(city: str, key: str) -> str | None:
     url = f"{GIS_BASE}/2.0/region/list"
     resp = requests.get(url, params={"q": city, "key": key}, timeout=10)
-    print("REGIONS ответ:", resp.status_code)
-    print("REGIONS json:", resp.json())
+    print("REGIONS статус:", resp.status_code, flush=True)
+    print("REGIONS json:", resp.json(), flush=True)
     resp.raise_for_status()
     items = resp.json().get("result", {}).get("items", [])
     city_id = None
@@ -17,20 +17,29 @@ def get_city_id(city: str, key: str) -> str | None:
         if city.lower() in item.get("name", "").lower():
             city_id = item["id"]
             break
-    print("CITY_ID:", city_id)
+    print("CITY_ID:", city_id, flush=True)
     return str(city_id) if city_id else None
 
 
-def _extract_contacts(org: dict) -> dict:
+def _extract_contacts(item: dict) -> dict:
     contacts = {"phone": [], "whatsapp": [], "telegram": [], "viber": [], "vk": [], "instagram": [], "email": []}
 
-    for c in org.get("contacts", []):
-        ctype = c.get("type", "")
-        value = c.get("value", "") or c.get("url", "")
-        if ctype in contacts:
-            contacts[ctype].append(value)
+    for group in item.get("contact_groups", []):
+        for c in group.get("contacts", []):
+            ctype = c.get("type", "")
+            value = c.get("value", "") or c.get("url", "")
+            if ctype in contacts:
+                contacts[ctype].append(value)
 
     return contacts
+
+
+def _has_website(item: dict) -> bool:
+    for group in item.get("contact_groups", []):
+        for c in group.get("contacts", []):
+            if c.get("type") == "website":
+                return True
+    return False
 
 
 def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dict]:
@@ -48,7 +57,7 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "org.website,org.contacts",
+                "fields": "item.contact_groups",
             }
         else:
             params = {
@@ -56,24 +65,24 @@ def parse_businesses(category: str, city: str, pages: int, key: str) -> list[dic
                 "key": key,
                 "page_size": 10,
                 "page": page,
-                "fields": "org.website,org.contacts",
+                "fields": "item.contact_groups",
             }
 
         resp = requests.get(url, params=params, timeout=15)
-        print("CATALOG статус:", resp.status_code)
-        print("CATALOG json:", resp.json())
+        print("CATALOG статус:", resp.status_code, flush=True)
+        print("CATALOG json:", resp.json(), flush=True)
         resp.raise_for_status()
         data = resp.json()
 
         items = data.get("result", {}).get("items", [])
+        print(f"Найдено items на странице {page}:", len(items), flush=True)
         if not items:
             break
 
         for item in items:
             checked += 1
-            print("ITEM:", item.get("name"), "contacts:", item.get("contact_groups"))
-            org = item.get("org", {})
-            contacts = _extract_contacts(org)
+            contacts = _extract_contacts(item)
+            print("ITEM:", item.get("name"), "| contacts:", contacts, flush=True)
             if not any(contacts.values()):
                 continue
 
