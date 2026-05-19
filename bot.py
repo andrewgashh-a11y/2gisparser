@@ -2,22 +2,23 @@ import os
 import threading
 import logging
 
+import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from parser import parse_businesses
-from generator import generate_messages_for_leads, pick_channel
+from generator import generate_messages_for_leads
 
 load_dotenv()
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+TOKEN = os.environ["TELEGRAM_TOKEN"]
 GIS_KEY = os.environ["GIS_KEY"]
 OPENROUTER_KEY = os.environ["OPENROUTER_KEY"]
 MY_SITE = os.environ.get("MY_SITE", "landify.art")
 MY_TG = os.environ.get("MY_TG", "@landifyArt")
 PORT = int(os.environ.get("PORT", 5000))
+
+API = f"https://api.telegram.org/bot{TOKEN}"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,11 +33,31 @@ def healthcheck():
     return jsonify({"status": "ok"})
 
 
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT)
+# ── Telegram helpers ───────────────────────────────────────────────────────────
+
+def send(chat_id: int, text: str):
+    requests.post(
+        f"{API}/sendMessage",
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+        timeout=10,
+    )
 
 
-# ── Telegram handlers ──────────────────────────────────────────────────────────
+def get_updates(offset: int) -> list:
+    try:
+        resp = requests.get(
+            f"{API}/getUpdates",
+            params={"offset": offset, "timeout": 30},
+            timeout=35,
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", [])
+    except Exception as e:
+        logger.warning("getUpdates error: %s", e)
+        return []
+
+
+# ── Contact formatting ─────────────────────────────────────────────────────────
 
 CHANNEL_EMOJI = {
     "phone": "📞",
@@ -67,105 +88,101 @@ def format_lead(lead: dict) -> str:
     for key in ["phone", "whatsapp", "telegram", "viber", "vk", "instagram", "email"]:
         values = lead["contacts"].get(key, [])
         if values:
-            emoji = CHANNEL_EMOJI[key]
-            label = CONTACT_LABELS[key]
-            lines.append(f"{emoji} {label}: {', '.join(values)}")
-
-    lines.append("")
-    lines.append("💬 СООБЩЕНИЕ:")
-    lines.append(lead.get("message", ""))
-    lines.append("———")
+            lines.append(f"{CHANNEL_EMOJI[key]} {CONTACT_LABELS[key]}: {', '.join(values)}")
+    lines += ["", "💬 СООБЩЕНИЕ:", lead.get("message", ""), "———"]
     return "\n".join(lines)
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "👋 Привет! Я бот для поиска бизнесов без сайта в 2GIS.\n\n"
-        "🔍 Команда парсинга:\n"
-        "/parse <категория> <город> <страниц>\n\n"
-        "Пример:\n"
-        "/parse автосервис Краснодар 3\n\n"
-        "Бот найдёт бизнесы без сайта и сгенерирует холодное сообщение для каждого."
-    )
-    await update.message.reply_text(text)
+# ── Command handlers ───────────────────────────────────────────────────────────
+
+def handle_start(chat_id: int):
+    send(chat_id,
+         "👋 Привет! Я бот для поиска бизнесов без сайта в 2GIS.\n\n"
+         "🔍 Команда парсинга:\n"
+         "/parse &lt;категория&gt; &lt;город&gt; &lt;страниц&gt;\n\n"
+         "Пример:\n"
+         "/parse автосервис Краснодар 3\n\n"
+         "Бот найдёт бизнесы без сайта и сгенерирует холодное сообщение для каждого.")
 
 
-async def cmd_parse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
+def handle_parse(chat_id: int, args: list[str]):
     if len(args) < 3:
-        await update.message.reply_text(
-            "❌ Неверный формат.\nИспользуй: /parse <категория> <город> <страниц>\n"
-            "Пример: /parse автосервис Краснодар 3"
-        )
+        send(chat_id,
+             "❌ Неверный формат.\n"
+             "Используй: /parse &lt;категория&gt; &lt;город&gt; &lt;страниц&gt;\n"
+             "Пример: /parse автосервис Краснодар 3")
         return
 
     *category_parts, city, pages_str = args
     category = " ".join(category_parts)
 
     if not pages_str.isdigit() or int(pages_str) < 1:
-        await update.message.reply_text("❌ Количество страниц должно быть положительным числом.")
+        send(chat_id, "❌ Количество страниц должно быть положительным числом.")
         return
 
     pages = min(int(pages_str), 20)
-
-    await update.message.reply_text(
-        f"⏳ Парсю «{category}» в {city}, {pages} стр. Подожди..."
-    )
+    send(chat_id, f"⏳ Парсю «{category}» в {city}, {pages} стр. Подожди...")
 
     try:
         leads, checked = parse_businesses(category, city, pages, GIS_KEY)
     except ValueError as e:
-        await update.message.reply_text(f"❌ {e}")
+        send(chat_id, f"❌ {e}")
         return
     except Exception as e:
         logger.exception("parse error")
-        await update.message.reply_text(f"❌ Ошибка парсинга: {e}")
+        send(chat_id, f"❌ Ошибка парсинга: {e}")
         return
 
     if not leads:
-        await update.message.reply_text(
-            f"✅ Найдено 0 лидов из {checked} проверенных.\n"
-            "Все бизнесы по этому запросу уже имеют сайт."
-        )
+        send(chat_id,
+             f"✅ Найдено 0 лидов из {checked} проверенных.\n"
+             "Все бизнесы по этому запросу уже имеют сайт.")
         return
 
-    await update.message.reply_text(
-        f"✅ Найдено {len(leads)} лидов. Генерирую сообщения..."
-    )
+    send(chat_id, f"✅ Найдено {len(leads)} лидов. Генерирую сообщения...")
 
     try:
         leads_with_messages = generate_messages_for_leads(leads, OPENROUTER_KEY, MY_SITE, MY_TG)
     except Exception as e:
         logger.exception("generation error")
-        await update.message.reply_text(f"❌ Ошибка генерации: {e}")
+        send(chat_id, f"❌ Ошибка генерации: {e}")
         return
 
     for lead in leads_with_messages:
-        text = format_lead(lead)
-        try:
-            await update.message.reply_text(text)
-        except Exception:
-            await update.message.reply_text(text[:4000])
+        send(chat_id, format_lead(lead)[:4096])
 
-    await update.message.reply_text(
-        f"✅ Найдено {len(leads)} лидов из {checked} проверенных."
-    )
+    send(chat_id, f"✅ Найдено {len(leads)} лидов из {checked} проверенных.")
+
+
+# ── Long polling loop ──────────────────────────────────────────────────────────
+
+def polling():
+    offset = 0
+    logger.info("Bot polling started")
+    while True:
+        updates = get_updates(offset)
+        for update in updates:
+            offset = update["update_id"] + 1
+            message = update.get("message", {})
+            text = message.get("text", "")
+            chat_id = message.get("chat", {}).get("id")
+            if not chat_id or not text:
+                continue
+            parts = text.split()
+            command = parts[0].split("@")[0]
+            if command == "/start":
+                handle_start(chat_id)
+            elif command == "/parse":
+                handle_parse(chat_id, parts[1:])
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-def main():
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
+if __name__ == "__main__":
+    flask_thread = threading.Thread(
+        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
+        daemon=True,
+    )
     flask_thread.start()
     logger.info("Flask healthcheck started on port %s", PORT)
-
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("parse", cmd_parse))
-
-    logger.info("Bot polling started")
-    app.run_polling(drop_pending_updates=True)
-
-
-if __name__ == "__main__":
-    main()
+    polling()
